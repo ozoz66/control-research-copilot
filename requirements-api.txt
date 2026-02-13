@@ -1,0 +1,24 @@
+# AutoControl-Scientist API 模式依赖（无 PyQt6）
+# Python >= 3.9
+
+# HTTP 客户端
+aiohttp>=3.10.0
+
+# 加密模块
+cryptography>=41.0.0
+
+# YAML
+PyYAML>=6.0
+
+# 数据处理
+numpy>=1.24.0
+
+# FastAPI + ASGI
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.0.0
+
+# 可选: OpenTelemetry（取消注释启用）
+# opentelemetry-api>=1.20.0
+# opentelemetry-sdk>=1.20.0
+# opentelemetry-exporter-otlp-proto-grpc>=1.20.0

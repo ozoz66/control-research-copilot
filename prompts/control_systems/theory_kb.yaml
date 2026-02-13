@@ -1,0 +1,296 @@
+# 控制理论知识库 - AutoControl-Scientist
+# 包含常用的控制律、Lyapunov函数和稳定性证明模板
+
+control_laws:
+  pid:
+    name: "PID控制律"
+    latex: |
+      \begin{equation}
+      u(t) = K_p e(t) + K_i \int_0^t e(\tau) d\tau + K_d \dot{e}(t)
+      \end{equation}
+
+      其中，$e(t) = r(t) - y(t)$为跟踪误差，$K_p$, $K_i$, $K_d$分别为比例、积分、微分增益。
+
+  smc:
+    name: "滑模控制律"
+    latex: |
+      定义滑模面为:
+      \begin{equation}
+      s = \dot{e} + \lambda e
+      \end{equation}
+
+      其中$\lambda > 0$为滑模面参数，$e = x_d - x$为跟踪误差。
+
+      控制律设计为:
+      \begin{equation}
+      u = u_{eq} + u_{sw}
+      \end{equation}
+
+      等效控制:
+      \begin{equation}
+      u_{eq} = \frac{1}{g(x)}\left(\ddot{x}_d + \lambda \dot{e} - f(x)\right)
+      \end{equation}
+
+      切换控制:
+      \begin{equation}
+      u_{sw} = \frac{k}{g(x)} \text{sat}\left(\frac{s}{\epsilon}\right)
+      \end{equation}
+
+      其中$k > 0$为切换增益，$\epsilon > 0$为边界层厚度，$\text{sat}(\cdot)$为饱和函数。
+
+  adaptive_smc:
+    name: "自适应滑模控制律"
+    latex: |
+      定义滑模面为:
+      \begin{equation}
+      s = \dot{e} + \lambda e
+      \end{equation}
+
+      自适应滑模控制律:
+      \begin{equation}
+      u = \frac{1}{\hat{b}}\left(\ddot{x}_d + \lambda \dot{e} - \hat{f} + \hat{k} \text{sat}\left(\frac{s}{\epsilon}\right)\right)
+      \end{equation}
+
+      参数自适应律:
+      \begin{align}
+      \dot{\hat{f}} &= \gamma_f s \phi_f(x) \\
+      \dot{\hat{b}} &= \gamma_b s u \phi_b(x) \\
+      \dot{\hat{k}} &= \gamma_k |s|
+      \end{align}
+
+      其中$\gamma_f, \gamma_b, \gamma_k > 0$为自适应增益，$\phi_f(x), \phi_b(x)$为回归向量。
+
+  eso_based:
+    name: "基于ESO的控制律"
+    latex: |
+      \textbf{扩展状态观测器(ESO)设计:}
+
+      将系统改写为扩展状态形式:
+      \begin{align}
+      \dot{x}_1 &= x_2 \\
+      \dot{x}_2 &= x_3 + b_0 u \\
+      \dot{x}_3 &= h(t)
+      \end{align}
+
+      其中$x_3 = f(x_1, x_2, t) + (b - b_0)u + d(t)$为总扰动。
+
+      ESO状态方程:
+      \begin{align}
+      \dot{z}_1 &= z_2 + \beta_1 (y - z_1) \\
+      \dot{z}_2 &= z_3 + \beta_2 (y - z_1) + b_0 u \\
+      \dot{z}_3 &= \beta_3 (y - z_1)
+      \end{align}
+
+      \textbf{状态反馈控制律:}
+      \begin{equation}
+      u = \frac{1}{b_0}\left(u_0 - z_3\right)
+      \end{equation}
+
+      其中$u_0$为标称控制量:
+      \begin{equation}
+      u_0 = k_1(r - z_1) + k_2(\dot{r} - z_2)
+      \end{equation}
+
+  finite_time_smc:
+    name: "有限时间滑模控制律"
+    latex: |
+      \textbf{非奇异终端滑模面设计:}
+      \begin{equation}
+      s = e + \frac{1}{\beta} \dot{e}^{p/q}
+      \end{equation}
+
+      其中$\beta > 0$，$p, q > 0$为正奇数且$1 < p/q < 2$。
+
+      \textbf{有限时间控制律:}
+      \begin{equation}
+      u = \frac{1}{g(x)}\left(-f(x) + \ddot{x}_d - \beta \frac{q}{p} |\dot{e}|^{2-p/q} \text{sign}(\dot{e}) - k_1 |s|^{\alpha} \text{sign}(s) - k_2 s\right)
+      \end{equation}
+
+      其中$0 < \alpha < 1$，$k_1, k_2 > 0$为控制增益。
+
+      \textbf{收敛时间估计:}
+      系统状态将在有限时间$T$内收敛到滑模面，其中:
+      \begin{equation}
+      T \leq \frac{1}{k_1(1-\alpha)} |s(0)|^{1-\alpha}
+      \end{equation}
+
+lyapunov_templates:
+  quadratic: |
+    选取Lyapunov函数:
+    \begin{equation}
+    V = \frac{1}{2} s^2
+    \end{equation}
+
+    对$V$求导:
+    \begin{equation}
+    \dot{V} = s \dot{s}
+    \end{equation}
+
+  adaptive: |
+    选取复合Lyapunov函数:
+    \begin{equation}
+    V = \frac{1}{2} s^2 + \frac{1}{2\gamma_f} \tilde{f}^2 + \frac{1}{2\gamma_b} \tilde{b}^2 + \frac{1}{2\gamma_k} \tilde{k}^2
+    \end{equation}
+
+    其中$\tilde{f} = f - \hat{f}$, $\tilde{b} = b - \hat{b}$, $\tilde{k} = k^* - \hat{k}$为参数估计误差。
+
+  finite_time: |
+    选取Lyapunov函数:
+    \begin{equation}
+    V = \frac{1}{2} s^2 + \sum_{i=1}^{n} \frac{1}{2\gamma_i} \tilde{\theta}_i^2
+    \end{equation}
+
+    利用有限时间稳定性引理，若$\dot{V} \leq -\alpha V^{\beta}$，$0 < \beta < 1$，则系统在有限时间内收敛。
+
+stability_proof_templates:
+  asymptotic: |
+    \textbf{稳定性证明:}
+
+    将控制律代入$\dot{V}$，整理得:
+    \begin{equation}
+    \dot{V} = s\dot{s} = s\left(\dot{e} + \lambda e\right)' = -k|s| - \eta s^2 \leq -\eta V
+    \end{equation}
+
+    其中$\eta > 0$。根据Lyapunov稳定性理论，系统渐近稳定。
+
+    由Barbalat引理，当$t \to \infty$时，$s \to 0$，即系统状态渐近收敛到滑模面，跟踪误差趋近于零。
+
+  finite_time: |
+    \textbf{有限时间稳定性证明:}
+
+    将控制律代入$\dot{V}$，得:
+    \begin{equation}
+    \dot{V} \leq -k_1 |s|^{1+\alpha} - k_2 s^2 \leq -\mu V^{\frac{1+\alpha}{2}}
+    \end{equation}
+
+    其中$\mu = 2^{\frac{1+\alpha}{2}} k_1 > 0$。
+
+    根据有限时间稳定性引理，系统将在时间$T$内收敛到平衡点:
+    \begin{equation}
+    T \leq \frac{V(0)^{\frac{1-\alpha}{2}}}{\mu \cdot \frac{1-\alpha}{2}} = \frac{2 V(0)^{\frac{1-\alpha}{2}}}{\mu(1-\alpha)}
+    \end{equation}
+
+    证毕。
+
+  iss: |
+    \textbf{输入状态稳定性(ISS)证明:}
+
+    考虑存在有界扰动$d(t)$，$|d(t)| \leq D$，控制律设计为:
+    \begin{equation}
+    u = u_{eq} + u_{sw} - \frac{\hat{d}}{g(x)}
+    \end{equation}
+
+    其中$\hat{d}$为扰动估计值。
+
+    定义Lyapunov函数$V = \frac{1}{2}s^2 + \frac{1}{2\gamma}\tilde{d}^2$，对$V$求导:
+    \begin{align}
+    \dot{V} &= s\dot{s} + \frac{1}{\gamma}\tilde{d}\dot{\tilde{d}} \\
+    &\leq -k|s| + |s||d - \hat{d}| - \frac{1}{\gamma}\tilde{d}\dot{\hat{d}} \\
+    &= -k|s| + |s||\tilde{d}| - |s||\tilde{d}| \\
+    &= -k|s| \leq 0
+    \end{align}
+
+    系统满足输入状态稳定性(ISS)。
+
+parameter_tuning_guides:
+  pid: |
+    \section{参数整定指南}
+
+    \textbf{PID参数整定建议:}
+    \begin{itemize}
+        \item $K_p$: 增大比例增益可提高响应速度，但过大会导致超调和振荡
+        \item $K_i$: 积分项消除稳态误差，但会降低系统稳定裕度
+        \item $K_d$: 微分项改善动态性能，但对噪声敏感
+    \end{itemize}
+
+    \textbf{推荐整定步骤:}
+    \begin{enumerate}
+        \item 先整定$K_p$，使系统有适当的响应速度
+        \item 加入$K_d$抑制超调
+        \item 最后加入$K_i$消除稳态误差
+    \end{enumerate}
+
+  smc: |
+    \section{参数整定指南}
+
+    \textbf{滑模控制参数整定建议:}
+    \begin{itemize}
+        \item $\lambda$: 滑模面参数，决定收敛速度。增大$\lambda$加快收敛但增加控制量
+        \item $k$: 切换增益，需大于扰动上界以保证可达性
+        \item $\epsilon$: 边界层厚度，减小可提高精度但增加抖振
+    \end{itemize}
+
+    \textbf{参数选择原则:}
+    \begin{equation}
+    k > \sup_{t \geq 0} |d(t)| + \eta, \quad \eta > 0
+    \end{equation}
+
+    边界层设计:
+    \begin{equation}
+    \epsilon = \frac{k}{\lambda}
+    \end{equation}
+
+  adaptive_smc: |
+    \section{参数整定指南}
+
+    \textbf{自适应滑模控制参数整定建议:}
+    \begin{itemize}
+        \item $\lambda$: 同标准滑模控制
+        \item $\gamma_f, \gamma_b, \gamma_k$: 自适应增益，增大可加快参数收敛但可能引起振荡
+        \item $\epsilon$: 边界层厚度
+    \end{itemize}
+
+    \textbf{自适应增益选择:}
+    建议初始值:
+    \begin{align}
+    \gamma_f &\in [0.1, 10] \\
+    \gamma_b &\in [0.01, 1] \\
+    \gamma_k &\in [0.1, 5]
+    \end{align}
+
+    根据系统响应调整，若参数振荡则减小自适应增益。
+
+  eso_based: |
+    \section{参数整定指南}
+
+    \textbf{ESO参数整定建议:}
+
+    观测器带宽法: 令观测器极点配置为$(-\omega_o, -\omega_o, -\omega_o)$，则:
+    \begin{align}
+    \beta_1 &= 3\omega_o \\
+    \beta_2 &= 3\omega_o^2 \\
+    \beta_3 &= \omega_o^3
+    \end{align}
+
+    \textbf{带宽$\omega_o$选择原则:}
+    \begin{itemize}
+        \item $\omega_o$越大，观测响应越快，但对噪声越敏感
+        \item 通常取$\omega_o = (5 \sim 10) \omega_c$，其中$\omega_c$为控制带宽
+        \item 实际系统中$\omega_o$受采样频率限制
+    \end{itemize}
+
+    \textbf{控制增益选择:}
+    \begin{equation}
+    k_1 = \omega_c^2, \quad k_2 = 2\omega_c
+    \end{equation}
+
+  finite_time_smc: |
+    \section{参数整定指南}
+
+    \textbf{有限时间滑模控制参数整定建议:}
+    \begin{itemize}
+        \item $p, q$: 终端滑模面参数，需为正奇数且$1 < p/q < 2$
+        \item $\alpha$: 有限时间收敛指数，$0 < \alpha < 1$，越小收敛越快
+        \item $k_1, k_2$: 控制增益
+        \item $\beta$: 滑模面系数
+    \end{itemize}
+
+    \textbf{推荐参数范围:}
+    \begin{align}
+    p/q &= 5/3 \text{ 或 } 7/5 \\
+    \alpha &\in [0.5, 0.9] \\
+    k_1 &> 0, \quad k_2 > 0
+    \end{align}
+
+    \textbf{收敛时间估计:}
+    实际收敛时间与初始误差和参数$\alpha, k_1$相关，可通过仿真验证。

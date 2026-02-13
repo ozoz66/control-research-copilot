@@ -1,0 +1,85 @@
+agent: simulator
+description: "MATLAB仿真执行、故障修复与结果分析"
+
+prompts:
+  fix_code:
+    template: |
+      MATLAB代码执行出错，请修复以下代码:
+
+      【错误信息】
+      {error_msg}
+
+      【原始代码】
+      {code}
+
+      请返回修复后的完整MATLAB代码，用```matlab ... ```包裹。
+    variables:
+      - error_msg
+      - code
+
+  analysis:
+    template: |
+      你是一位控制系统仿真专家，请分析以下MATLAB仿真的运行结果，判断仿真是否成功、结果是否合理。
+
+      【研究课题】
+      {research_topic}
+
+      【MATLAB代码核心部分】
+      {matlab_code_preview}
+
+      【仿真输出】
+      {stdout_preview}
+
+      【已知性能指标】
+      {metrics_json}
+
+      【生成的图像】
+      {figures_list}
+
+      请分析以下方面:
+      1. **误差收敛性**: 跟踪误差是否收敛到零或接近零？暂态响应是否合理？
+      2. **控制量饱和**: 控制输入是否在合理范围内？是否出现过大的控制量？
+      3. **抖振检测**: 是否存在高频抖振/chattering？如有，程度如何？
+      4. **稳态性能**: 稳态误差是否满足精度要求？
+      5. **整体评估**: 仿真结果是否可以用于论文？
+
+      请以JSON格式返回:
+      {{
+        "acceptable": true或false,
+        "score": 0-100,
+        "summary": "一句话总结",
+        "issues": ["问题1", "问题2"],
+        "parameter_suggestions": {{"参数名": "建议值和理由"}}
+      }}
+
+      只返回JSON。
+    variables:
+      - research_topic
+      - matlab_code_preview
+      - stdout_preview
+      - metrics_json
+      - figures_list
+
+  refine:
+    template: |
+      仿真结果分析发现以下问题，请修改MATLAB代码中的参数以改善仿真效果。
+
+      【发现的问题】
+      {issues_text}
+
+      【参数调整建议】
+      {suggestions_json}
+
+      【当前MATLAB代码】
+      ```matlab
+      {matlab_code}
+      ```
+
+      请修改代码中的控制器参数（如增益、带宽、阈值等），使仿真结果更合理。
+      只修改参数值，不要改变控制算法结构。
+
+      返回修复后的完整MATLAB代码，用```matlab ... ```包裹。
+    variables:
+      - issues_text
+      - suggestions_json
+      - matlab_code

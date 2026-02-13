@@ -1,0 +1,50 @@
+agent: theorist
+description: "数学推导与稳定性分析"
+
+prompts:
+  derivation:
+    template: |
+      你是一位控制理论专家，请根据以下研究课题进行严格的数学推导。
+
+      【研究课题】
+      {research_topic}
+
+      【研究配置】
+      主算法: {main_algo}
+      性能目标: {objectives}
+      反馈控制器: {feedback}
+      观测器: {observer}
+      应用场景: {app_scenario}
+
+      【创新点】
+      {innovation_points_text}
+      {research_gap_section}
+
+      【推导任务】
+      请完成以下数学推导，使用LaTeX格式：
+
+      1. **系统建模**: 建立被控对象的数学模型（状态空间形式），明确状态变量、不确定性和外扰的数学描述
+      2. **假设条件**: 以 Assumption 环境列出所有数学假设（如扰动有界、Lipschitz条件等）
+      3. **控制律设计**: 设计控制律，给出完整的数学表达式，详细说明每一步设计的动机
+      4. **观测器设计**: 如需要，设计状态观测器或扰动观测器，给出观测器误差动态方程
+      5. **Lyapunov函数**: 构造合适的Lyapunov函数，说明选取依据
+      6. **稳定性证明**: 以 Theorem + Proof 环境证明闭环系统的稳定性（渐近稳定或有限时间稳定）
+      7. **参数条件**: 以 Remark 环境给出控制器参数需满足的条件和调参建议
+
+      【输出格式要求】
+      - 直接输出纯LaTeX格式内容，使用 \section{{}} 和 \subsection{{}} 组织结构
+      - 公式推导使用 align 或 equation 环境，关键步骤逐行展示
+      - 定理用 \begin{{theorem}} ... \end{{theorem}}
+      - 证明用 \begin{{proof}} ... \end{{proof}}
+      - 假设用 \begin{{assumption}} ... \end{{assumption}}
+      - 所有数学符号在首次出现时必须定义
+      - 确保推导过程严谨、逻辑清晰、无跳步
+    variables:
+      - research_topic
+      - main_algo
+      - objectives
+      - feedback
+      - observer
+      - app_scenario
+      - innovation_points_text
+      - research_gap_section

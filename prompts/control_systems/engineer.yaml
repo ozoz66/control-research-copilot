@@ -1,0 +1,60 @@
+agent: engineer
+description: "MATLAB仿真代码生成"
+
+prompts:
+  matlab_simulation:
+    template: |
+      你是一位MATLAB仿真专家和控制系统工程师，请根据以下控制系统设计生成完整的、可直接运行的MATLAB仿真代码。
+
+      【研究课题】
+      {research_topic}
+
+      【控制策略】
+      主算法: {main_algo}
+      性能目标: {objectives}
+      应用场景: {app_scenario}
+
+      【创新点（仿真需验证）】
+      {innovation_points_text}
+
+      【控制律推导（LaTeX）】
+      {control_law_preview}
+
+      【观测器设计（LaTeX）】
+      {observer_preview}
+      {assumptions_preview}
+      {tuning_guide_preview}
+
+      【仿真要求】
+      1. 建立被控系统模型（基于课题描述选择适当阶数，含参数不确定性和外扰）
+      2. 严格按照上述控制律推导实现控制算法（不要自行改变控制器结构）
+      3. 设计合适的参考轨迹（建议包含正弦跟踪和阶跃响应两种场景）
+      4. 如有观测器，实现观测器并绘制估计对比曲线
+      5. 实现一个传统对比方法（如常规PID或标准SMC），用于对比验证创新方法的优势
+      6. 绘制以下图形并保存为PNG格式：
+         - Fig1: 跟踪响应曲线（参考轨迹 vs 实际输出 vs 对比方法）
+         - Fig2: 跟踪误差曲线（所提方法 vs 对比方法）
+         - Fig3: 控制输入曲线
+         - Fig4: 如有观测器，绘制状态/扰动估计曲线
+      7. 计算并用fprintf输出性能指标（最大误差、RMS误差、调节时间等）
+
+      【代码规范】
+      - 使用清晰的英文变量命名和中文注释
+      - 仿真时间建议5-10秒，采样步长0.001秒
+      - 图形使用英文标签（便于论文使用），字体大小12pt，线宽1.5
+      - 使用 `print('-dpng', '-r300', 'filename.png')` 保存高清图片
+      - 每张图使用 figure() 创建新窗口
+      - 代码应能独立运行，不依赖Control System Toolbox以外的工具箱
+      - 所有参数集中定义在代码开头，方便调参
+
+      请生成完整的MATLAB代码，用```matlab ... ```包裹。
+    variables:
+      - research_topic
+      - main_algo
+      - objectives
+      - app_scenario
+      - innovation_points_text
+      - control_law_preview
+      - observer_preview
+      - assumptions_preview
+      - tuning_guide_preview

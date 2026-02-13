@@ -1,0 +1,47 @@
+有三种运行方式，取决于你想用哪个功能：
+
+  1. GUI 桌面模式（含 Dashboard）
+
+  # 先安装 matplotlib（Dashboard 需要）
+  pip install matplotlib
+
+  # 启动 GUI
+  python main.py
+
+  启动后切换到第 4 个 Tab "Dashboard" 即可看到仪表盘。
+
+  2. FastAPI Web API 模式
+
+  # 安装 API 依赖
+  pip install fastapi uvicorn pydantic
+
+  # 启动 API 服务
+  python api_main.py
+
+  启动后访问：
+  - Swagger 文档: http://localhost:8000/docs
+  - 健康检查: http://localhost:8000/api/health
+
+  3. Docker 容器模式
+
+  # 构建镜像
+  docker build -t autocontrol-api .
+
+  # 运行容器
+  docker run -p 8000:8000 autocontrol-api
+
+  # 或用 docker-compose
+  docker-compose up --build
+
+  快速验证各模块是否正常
+
+  # 验证 Observability（无需额外安装）
+  python -c "from core.telemetry import init_telemetry, trace_span; print('OK')"
+
+  # 验证 API 模型（需要 pydantic）
+  python -c "from api.models import HealthResponse; print('OK')"
+
+  # 验证 Dashboard 图表（需要 matplotlib + PyQt6）
+  python -c "from gui.dashboard_charts import TokenUsageChart; print('OK')"
+
+  推荐顺序：先跑方式 1 (python main.py) 看 Dashboard，再试方式 2 (python api_main.py) 看 Swagger。

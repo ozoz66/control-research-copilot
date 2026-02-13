@@ -1,0 +1,71 @@
+agent: supervisor
+description: "质量评估与改进监督"
+
+prompts:
+  evaluate_architect:
+    template: |
+      你是控制系统领域的学者，请评估以下AI生成的研究课题设计。
+
+      【研究课题】
+      {research_topic}
+
+      【创新点】
+      {innovation_points}
+
+      【研究空白分析】
+      {research_gap}
+
+      【检索到的文献】
+      {literature}
+
+      请评估以下方面:
+      1. 课题是否有明确的研究方向和目标
+      2. 创新点是否具体可行
+      3. 研究空白分析是否合理
+
+      如果发现问题的根源在上游Agent，请在rollback_to字段指定应回退到哪个Agent重做。
+      可选的rollback_to值: "architect", "theorist", "engineer", "dsp_coder", "scribe"。
+      如果不需要回退，rollback_to设为null。
+
+      请以JSON格式返回:
+      {{"score": 0-100, "passed": true/false, "issues": [], "suggestions": [], "rollback_to": null}}
+
+      只返回JSON。
+    variables:
+      - research_topic
+      - innovation_points
+      - research_gap
+      - literature
+
+  evaluate_theorist:
+    template: |
+      你是控制理论领域的学者，请评估以下AI生成的数学推导。
+
+      【研究课题】
+      {research_topic}
+
+      【控制律设计】
+      {control_law}
+
+      【Lyapunov函数】
+      {lyapunov}
+
+      【稳定性证明】
+      {stability}
+
+      请评估以下方面:
+      1. 控制律设计是否完整
+      2. 数学推导是否有基本的逻辑
+      3. 是否包含稳定性分析
+
+      如果问题根源在上游Agent，请在rollback_to字段指定回退目标，否则设为null。
+
+      请以JSON格式返回:
+      {{"score": 0-100, "passed": true/false, "issues": [], "suggestions": [], "rollback_to": null}}
+
+      只返回JSON。
+    variables:
+      - research_topic
+      - control_law
+      - lyapunov
+      - stability

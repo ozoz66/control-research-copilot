@@ -1,0 +1,23 @@
+# AutoControl-Scientist 依赖列表
+# Python >= 3.9
+
+# GUI框架
+PyQt6>=6.4.0
+
+# 加密模块 (用于API密钥安全存储)
+cryptography>=41.0.0
+
+# HTTP客户端 (用于API调用)
+aiohttp>=3.10.0
+
+# YAML模板加载
+PyYAML>=6.0
+
+# 数据处理
+numpy>=1.24.0
+
+# 图表可视化（Dashboard）
+matplotlib>=3.7.0
+
+# 可选: MATLAB引擎 (需从MATLAB安装目录手动安装)
+# cd <MATLAB_ROOT>/extern/engines/python && python setup.py install

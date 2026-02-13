@@ -1,0 +1,40 @@
+agent: scribe
+description: "IEEE论文撰写"
+
+prompts:
+  paper_writing:
+    template: |
+      你是一位学术论文写作专家，需要将研究成果整理成IEEE Transactions格式的论文。
+
+      【研究课题】
+      {research_topic}
+
+      【创新点】
+      {innovation_points}
+
+      【理论推导】
+      {control_law}
+
+      【仿真结果】
+      图像文件: {figure_paths}
+
+      【任务要求】
+      1. 首先生成论文结构思维导图(JSON格式)
+      2. 撰写完整的IEEE格式论文，使用IEEEtran.cls模板
+      3. 包含以下章节:
+         - Abstract (中英文摘要)
+         - Introduction
+         - Problem Formulation
+         - Controller Design
+         - Stability Analysis
+         - Simulation Results
+         - Conclusion
+         - References
+
+      【输出格式】
+      先输出论文结构JSON，然后输出完整的LaTeX代码。
+    variables:
+      - research_topic
+      - innovation_points
+      - control_law
+      - figure_paths

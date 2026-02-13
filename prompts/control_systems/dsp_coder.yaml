@@ -1,0 +1,36 @@
+agent: dsp_coder
+description: "DSP代码生成"
+
+prompts:
+  dsp_generation:
+    template: |
+      你是一位嵌入式系统专家，需要将控制算法移植到TMS320F28335 DSP。
+
+      【已验证的MATLAB代码】
+      {matlab_code_preview}
+
+      【控制律设计】
+      {control_law_latex}
+
+      【约束条件】
+      1. 必须使用 DSP2833x_Device.h 头文件
+      2. 数据类型: Uint16, Uint32, float32
+      3. 实现 interrupt void Control_ISR(void) 中断服务程序
+      4. 采样周期: 1ms (可配置)
+      5. 使用定点运算优化（浮点部分用float32）
+
+      【输出格式】
+      请分别输出:
+      1. control_algorithm.h - 头文件（包含宏定义、结构体、函数声明）
+      2. control_algorithm.c - 主控制代码（包含初始化、控制算法、ISR）
+      3. 主要包含:
+         - 参数宏定义
+         - 状态变量结构体
+         - 初始化函数
+         - Control_Update 控制算法函数
+         - Control_ISR 中断服务程序
+
+      请确保代码完整可编译，包含所有必要的函数实现。
+    variables:
+      - matlab_code_preview
+      - control_law_latex
