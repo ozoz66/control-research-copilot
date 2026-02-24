@@ -7,6 +7,7 @@ Agent交互历史记录 - AutoControl-Scientist
 
 import json
 import logging
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -85,8 +86,8 @@ class AgentHistory:
         Args:
             max_records: 最大记录数，超出后自动清理旧记录
         """
-        self._records: List[InteractionRecord] = []
         self._max_records = max_records
+        self._records: deque[InteractionRecord] = deque(maxlen=max_records)
         self._session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     def record(
@@ -117,11 +118,6 @@ class AgentHistory:
         )
         
         self._records.append(record)
-        
-        # 自动清理旧记录
-        if len(self._records) > self._max_records:
-            self._records = self._records[-self._max_records:]
-        
         logger.debug("记录交互: %s - %s", interaction_type.value, agent_key)
         return record
     
@@ -253,8 +249,8 @@ class AgentHistory:
         Returns:
             匹配的记录列表
         """
-        results = self._records
-        
+        results: list[InteractionRecord] = list(self._records)
+
         if agent_key:
             results = [r for r in results if r.agent_key == agent_key]
         
@@ -304,11 +300,12 @@ class AgentHistory:
     
     def get_session_summary(self) -> Dict[str, Any]:
         """获取当前会话摘要"""
-        agent_keys = set(r.agent_key for r in self._records)
-        
+        records = list(self._records)
+        agent_keys = set(r.agent_key for r in records)
+
         return {
             "session_id": self._session_id,
-            "total_records": len(self._records),
+            "total_records": len(records),
             "agents": list(agent_keys),
             "agent_summaries": {
                 key: self.get_agent_summary(key) for key in agent_keys
@@ -318,11 +315,12 @@ class AgentHistory:
     def export_json(self, path: str) -> bool:
         """导出为JSON文件"""
         try:
+            records = list(self._records)
             data = {
                 "session_id": self._session_id,
                 "export_time": datetime.now().isoformat(),
-                "total_records": len(self._records),
-                "records": [r.to_dict() for r in self._records]
+                "total_records": len(records),
+                "records": [r.to_dict() for r in records]
             }
             with open(path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
@@ -335,22 +333,23 @@ class AgentHistory:
     def export_markdown(self, path: str) -> bool:
         """导出为Markdown文件"""
         try:
+            records = list(self._records)
             lines = [
-                f"# Agent交互历史",
-                f"",
+                "# Agent交互历史",
+                "",
                 f"会话ID: `{self._session_id}`",
-                f"",
+                "",
                 f"导出时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                f"",
-                f"总记录数: {len(self._records)}",
-                f"",
-                f"---",
-                f"",
+                "",
+                f"总记录数: {len(records)}",
+                "",
+                "---",
+                "",
             ]
-            
+
             # 按Agent分组
             agent_records: Dict[str, List[InteractionRecord]] = {}
-            for r in self._records:
+            for r in records:
                 if r.agent_key not in agent_records:
                     agent_records[r.agent_key] = []
                 agent_records[r.agent_key].append(r)

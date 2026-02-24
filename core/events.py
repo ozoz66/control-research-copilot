@@ -10,6 +10,7 @@
 
 import asyncio
 import threading
+from collections import deque
 from typing import Any, Callable, Dict, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -58,12 +59,12 @@ class EventEmitter:
         await emitter.emit_async("workflow_completed", context)
     """
 
-    def __init__(self):
+    def __init__(self, max_history: int = 100):
         self._listeners: Dict[str, List[Callable]] = {}
         self._async_listeners: Dict[str, List[Callable]] = {}
         self._lock = threading.RLock()
-        self._event_history: List[Event] = []
-        self._max_history = 100
+        self._max_history = max_history
+        self._event_history: deque[Event] = deque(maxlen=max_history)
 
     def on(self, event_type: str, callback: Callable) -> 'EventEmitter':
         """
@@ -144,10 +145,8 @@ class EventEmitter:
         event = Event(type=event_type, data=data, source=source)
 
         with self._lock:
-            # 记录历史
+            # 记录历史 (deque auto-evicts oldest when maxlen exceeded)
             self._event_history.append(event)
-            if len(self._event_history) > self._max_history:
-                self._event_history.pop(0)
 
             # 获取监听器副本
             listeners = list(self._listeners.get(event_type, []))
@@ -177,8 +176,6 @@ class EventEmitter:
 
         with self._lock:
             self._event_history.append(event)
-            if len(self._event_history) > self._max_history:
-                self._event_history.pop(0)
 
             sync_listeners = list(self._listeners.get(event_type, []))
             async_listeners = list(self._async_listeners.get(event_type, []))
@@ -235,14 +232,14 @@ class EventEmitter:
             limit: 返回数量限制
 
         Returns:
-            事件列表
+            事件列表（最近的在末尾）
         """
         with self._lock:
             if event_type:
                 events = [e for e in self._event_history if e.type == event_type]
             else:
                 events = list(self._event_history)
-        return events[-limit:]
+        return events[-limit:] if limit < len(events) else events
 
     def listener_count(self, event_type: str = None) -> int:
         """获取监听器数量"""
@@ -257,6 +254,4 @@ class EventEmitter:
 # 便捷函数：创建预配置的事件发射器
 def create_workflow_emitter() -> EventEmitter:
     """创建工作流专用的事件发射器"""
-    emitter = EventEmitter()
-    emitter._max_history = 500  # 工作流需要更多历史记录
-    return emitter
+    return EventEmitter(max_history=500)

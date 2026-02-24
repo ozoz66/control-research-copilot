@@ -9,7 +9,7 @@ import logging
 import threading
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Deque, Dict, List, Optional
+from typing import Any, Callable, Deque, Dict, List, Optional
 
 from core.research_orchestrator import ResearchOrchestrator
 from core.workflow_engine import WorkflowState
@@ -43,6 +43,7 @@ class SessionManager:
 
     def __init__(self):
         self._sessions: Dict[str, ResearchSession] = {}
+        self._lock = threading.RLock()
 
     def create_session(self, config: Dict[str, Any]) -> ResearchSession:
         """
@@ -71,19 +72,28 @@ class SessionManager:
         # 绑定事件
         self._bind_events(session)
 
-        # 启动工作流
-        orchestrator.start_workflow(config)
+        with self._lock:
+            self._sessions[session_id] = session
 
-        self._sessions[session_id] = session
+        # 启动工作流（失败时回滚会话，避免泄漏僵尸 session）
+        try:
+            orchestrator.start_workflow(config)
+        except Exception:
+            with self._lock:
+                self._sessions.pop(session_id, None)
+            raise
+
         logger.info("创建会话: %s", session_id)
         return session
 
     def get_session(self, session_id: str) -> Optional[ResearchSession]:
-        return self._sessions.get(session_id)
+        with self._lock:
+            return self._sessions.get(session_id)
 
     def delete_session(self, session_id: str, stop_if_running: bool = True) -> bool:
         """删除会话并释放内存。"""
-        session = self._sessions.get(session_id)
+        with self._lock:
+            session = self._sessions.pop(session_id, None)
         if not session:
             return False
 
@@ -91,38 +101,48 @@ class SessionManager:
             session.orchestrator.stop_workflow()
 
         session.event_notifier.set()
-        del self._sessions[session_id]
         logger.info("删除会话: %s", session_id)
         return True
 
     def get_status(self, session_id: str) -> Optional[Dict[str, Any]]:
-        session = self._sessions.get(session_id)
+        session = self.get_session(session_id)
         if not session:
             return None
+
+        with session.event_lock:
+            progress = session.progress
+            current_stage = session.current_stage
+            error = session.error
         state = session.orchestrator.get_state()
         return {
             "session_id": session_id,
             "state": state.value,
-            "progress": session.progress,
-            "current_stage": session.current_stage,
-            "error": session.error,
+            "progress": progress,
+            "current_stage": current_stage,
+            "error": error,
         }
 
     def list_sessions(self) -> List[Dict[str, Any]]:
+        with self._lock:
+            items = list(self._sessions.items())
         results = []
-        for sid, session in self._sessions.items():
+        for sid, session in items:
+            with session.event_lock:
+                progress = session.progress
             state = session.orchestrator.get_state()
             results.append({
                 "session_id": sid,
                 "state": state.value,
-                "progress": session.progress,
+                "progress": progress,
             })
         return results
 
     @property
     def active_count(self) -> int:
+        with self._lock:
+            sessions = list(self._sessions.values())
         return sum(
-            1 for s in self._sessions.values()
+            1 for s in sessions
             if s.orchestrator.get_state() in (WorkflowState.RUNNING, WorkflowState.WAITING_CONFIRMATION)
         )
 
@@ -130,7 +150,9 @@ class SessionManager:
         """清理超过 max_age_seconds 的已完成/出错会话，返回清理数量"""
         now = time.time()
         to_remove = []
-        for sid, session in self._sessions.items():
+        with self._lock:
+            items = list(self._sessions.items())
+        for sid, session in items:
             age = now - session.created_at
             if age < max_age_seconds:
                 continue
@@ -183,8 +205,12 @@ class SessionManager:
         """订阅 orchestrator 事件并存入 event_log"""
         orch = session.orchestrator
         
-        def append_event(event: Dict[str, Any]) -> None:
+        def append_event(
+            event: Dict[str, Any], update: Optional[Callable[[], None]] = None
+        ) -> None:
             with session.event_lock:
+                if update:
+                    update()
                 session.event_seq += 1
                 payload = dict(event)
                 payload["_seq"] = session.event_seq
@@ -192,21 +218,26 @@ class SessionManager:
             session.event_notifier.set()
 
         def on_progress(event):
-            data = event.data
-            session.progress = data.get("progress", 0)
-            session.current_stage = data.get("description", "")
-            append_event({"type": "progress", "data": data})
+            data = event.data if isinstance(event.data, dict) else {"raw": event.data}
+
+            def update_progress() -> None:
+                raw_progress = data.get("progress", 0)
+                session.progress = int(raw_progress) if isinstance(raw_progress, (int, float)) else 0
+                session.current_stage = str(data.get("description", ""))
+
+            append_event({"type": "progress", "data": data}, update=update_progress)
 
         def on_log(event):
             append_event({"type": "log", "data": event.data})
 
         def on_error(event):
-            session.error = str(event.data)
-            append_event({"type": "error", "data": event.data})
+            append_event(
+                {"type": "error", "data": event.data},
+                update=lambda: setattr(session, "error", str(event.data)),
+            )
 
         def on_completed(event):
-            session.progress = 100
-            append_event({"type": "completed"})
+            append_event({"type": "completed"}, update=lambda: setattr(session, "progress", 100))
 
         orch.events.on("progress_updated", on_progress)
         orch.events.on("log_message", on_log)

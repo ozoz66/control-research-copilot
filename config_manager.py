@@ -7,6 +7,7 @@ import base64
 import getpass
 import hashlib
 import json
+import dataclasses
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -57,27 +58,10 @@ class AgentConfig:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "AgentConfig":
-        payload = dict(data)
-        payload.setdefault("rag_enabled", True)
-        payload.setdefault("rag_top_k", 4)
-        payload.setdefault("rag_min_score", 0.08)
-        payload.setdefault("rag_max_chunks_per_file", 2)
-        payload.setdefault("rag_chunk_size", 1200)
-        payload.setdefault("rag_chunk_overlap", 200)
-        payload.setdefault("rag_max_context_chars", 5000)
-        payload.setdefault("rag_max_file_size_kb", 512)
-        payload.setdefault("rag_paths", ["./README.md", "./docs", "./prompts/control_systems"])
-        payload.setdefault(
-            "rag_include_globs",
-            ["*.md", "*.txt", "*.rst", "*.yaml", "*.yml", "*.tex", "*.json", "*.py"],
-        )
-        payload.setdefault("skill_enabled", True)
-        payload.setdefault("skill_max_context_chars", 4000)
-        payload.setdefault("skill_max_files", 8)
-        payload.setdefault("skill_max_file_size_kb", 256)
-        payload.setdefault("skill_paths", ["./skills"])
-        payload.setdefault("skill_include_globs", ["*.md", "*.txt", "*.rst", "*.yaml", "*.yml"])
-        return cls(**payload)
+        # Only pass keys that are valid dataclass fields, letting defaults handle the rest
+        valid_fields = {f.name for f in dataclasses.fields(cls)}
+        filtered = {k: v for k, v in data.items() if k in valid_fields}
+        return cls(**filtered)
 
 
 @dataclass
@@ -251,20 +235,46 @@ class ConfigManager:
         self.save()
 
     def add_agent(self, config: AgentConfig) -> bool:
-        self.settings.agents.append(config)
+        self.settings = AppSettings(
+            agents=[*self.settings.agents, config],
+            matlab_path=self.settings.matlab_path,
+            last_project=self.settings.last_project,
+            output_dir=self.settings.output_dir,
+            auto_save=self.settings.auto_save,
+            language=self.settings.language,
+        )
         return self.save() if self.settings.auto_save else True
 
     def update_agent(self, index: int, config: AgentConfig) -> bool:
-        if 0 <= index < len(self.settings.agents):
-            self.settings.agents[index] = config
-            return self.save() if self.settings.auto_save else True
-        return False
+        if not (0 <= index < len(self.settings.agents)):
+            return False
+        new_agents = [
+            config if i == index else a
+            for i, a in enumerate(self.settings.agents)
+        ]
+        self.settings = AppSettings(
+            agents=new_agents,
+            matlab_path=self.settings.matlab_path,
+            last_project=self.settings.last_project,
+            output_dir=self.settings.output_dir,
+            auto_save=self.settings.auto_save,
+            language=self.settings.language,
+        )
+        return self.save() if self.settings.auto_save else True
 
     def delete_agent(self, index: int) -> bool:
-        if 0 <= index < len(self.settings.agents):
-            del self.settings.agents[index]
-            return self.save() if self.settings.auto_save else True
-        return False
+        if not (0 <= index < len(self.settings.agents)):
+            return False
+        new_agents = [a for i, a in enumerate(self.settings.agents) if i != index]
+        self.settings = AppSettings(
+            agents=new_agents,
+            matlab_path=self.settings.matlab_path,
+            last_project=self.settings.last_project,
+            output_dir=self.settings.output_dir,
+            auto_save=self.settings.auto_save,
+            language=self.settings.language,
+        )
+        return self.save() if self.settings.auto_save else True
 
     def get_agent(self, index: int) -> Optional[AgentConfig]:
         if 0 <= index < len(self.settings.agents):

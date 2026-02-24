@@ -16,7 +16,7 @@ import asyncio
 import json
 import time
 from contextlib import nullcontext
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 import aiohttp
 
@@ -38,12 +38,25 @@ try:
 except ImportError:  # pragma: no cover
     TELEMETRY_AVAILABLE = False
 
+_RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+
 
 def _get_model_name(api_config) -> str:
     model = getattr(api_config, "model_name", None) or getattr(api_config, "model", None)
     if not model:
         raise RuntimeError("API配置缺少模型名称（model_name 或 model）")
     return str(model)
+
+
+def _validate_config(api_config) -> Tuple[str, str, str]:
+    """Validate config and return (base_url, api_key, model)."""
+    if api_config is None or not api_config.api_key:
+        raise RuntimeError("API未配置，请在配置中设置有效的 API Key 和 Base URL")
+    return (
+        api_config.base_url.rstrip("/"),
+        api_config.api_key,
+        _get_model_name(api_config),
+    )
 
 
 def _prepare_request_payload(
@@ -93,6 +106,76 @@ def _prepare_request_payload(
     return is_anthropic, headers, url, payload
 
 
+def _extract_response_text(data: dict, is_anthropic: bool) -> Tuple[str, int]:
+    """Extract text and token count from API response data.
+
+    Returns:
+        (response_text, total_tokens)
+    """
+    if is_anthropic:
+        content = data.get("content", [])
+        if not content or not isinstance(content, list):
+            raise RuntimeError("Anthropic API返回格式异常: 缺少 content 字段或 content 为空")
+        text_blocks = [b.get("text", "") for b in content if b.get("type") == "text"]
+        if not text_blocks:
+            text_blocks = [content[0].get("text", "")] if content else [""]
+        return "\n".join(text_blocks), data.get("usage", {}).get("input_tokens", 0) + data.get("usage", {}).get("output_tokens", 0)
+
+    choices = data.get("choices", [])
+    if not choices or not isinstance(choices, list):
+        raise RuntimeError("OpenAI API返回格式异常: 缺少 choices 字段或 choices 为空")
+    text = choices[0].get("message", {}).get("content", "")
+    return text, data.get("usage", {}).get("total_tokens", 0)
+
+
+async def _retry_on_failure(
+    coro_factory: Callable,
+    max_retries: int,
+    timeout: int,
+) -> str:
+    """Execute an async operation with exponential backoff retry.
+
+    Args:
+        coro_factory: Callable(attempt) -> coroutine returning result string
+        max_retries: Max number of attempts
+        timeout: Timeout in seconds (for error messages)
+
+    Returns:
+        Result string from the successful attempt
+
+    Raises:
+        RuntimeError: If all attempts fail
+    """
+    last_error: Optional[RuntimeError] = None
+
+    for attempt in range(max_retries):
+        try:
+            return await coro_factory(attempt)
+        except RuntimeError as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)
+                continue
+            raise
+        except asyncio.TimeoutError:
+            last_error = RuntimeError("API请求超时（%d秒）" % timeout)
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)
+                continue
+        except aiohttp.ClientError as e:
+            last_error = RuntimeError("网络连接错误: %s" % e)
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)
+                continue
+        except json.JSONDecodeError as e:
+            last_error = RuntimeError("API响应JSON解析失败: %s" % e)
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)
+                continue
+
+    raise last_error or RuntimeError("API调用失败，已达最大重试次数")
+
+
 async def call_llm_api_stream(
     api_config,
     prompt: str,
@@ -104,12 +187,7 @@ async def call_llm_api_stream(
     temperature: float = 0.7,
     agent_key: str = "unknown",
 ) -> str:
-    if api_config is None or not api_config.api_key:
-        raise RuntimeError("API未配置，请在配置中设置有效的 API Key 和 Base URL")
-
-    base_url = api_config.base_url.rstrip("/")
-    api_key = api_config.api_key
-    model = _get_model_name(api_config)
+    base_url, api_key, model = _validate_config(api_config)
 
     if HISTORY_AVAILABLE:
         get_agent_history().record_llm_request(agent_key, prompt, model, system_prompt)
@@ -127,75 +205,61 @@ async def call_llm_api_stream(
     )
 
     client_timeout = aiohttp.ClientTimeout(total=timeout)
-    last_error = None
     trace_context = trace_llm_call(agent_key, model, len(prompt)) if TELEMETRY_AVAILABLE else nullcontext()
 
-    with trace_context:
+    async def _attempt(attempt: int) -> str:
+        logger.info(
+            "第%d次尝试流式调用API: %s... (超时: %d秒)",
+            attempt + 1,
+            url[:50],
+            timeout,
+        )
         async with aiohttp.ClientSession(timeout=client_timeout) as session:
-            for attempt in range(max_retries):
-                try:
-                    logger.info(
-                        "第%d次尝试流式调用API: %s... (超时: %d秒)",
-                        attempt + 1,
-                        url[:50],
-                        timeout,
+            async with session.post(url, headers=headers, json=payload) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    error = RuntimeError("API请求失败 (%d): %s" % (response.status, error_text[:200]))
+                    if response.status in _RETRYABLE_STATUS_CODES and attempt < max_retries - 1:
+                        raise error
+                    raise error
+
+                full_response = ""
+                async for raw_line in response.content:
+                    line = raw_line.decode("utf-8").strip()
+                    if not line or line == "data: [DONE]":
+                        continue
+                    if not line.startswith("data: "):
+                        continue
+                    try:
+                        data = json.loads(line[6:])
+                    except json.JSONDecodeError:
+                        continue
+
+                    chunk_content = ""
+                    if is_anthropic:
+                        if data.get("type") == "content_block_delta":
+                            chunk_content = data.get("delta", {}).get("text", "")
+                    else:
+                        choices = data.get("choices", [])
+                        if choices:
+                            chunk_content = choices[0].get("delta", {}).get("content", "")
+
+                    if chunk_content:
+                        full_response += chunk_content
+                        if on_chunk:
+                            on_chunk(chunk_content)
+
+                if HISTORY_AVAILABLE:
+                    get_agent_history().record_llm_response(
+                        agent_key,
+                        full_response,
+                        tokens_used=0,
+                        elapsed_time=time.time() - start_time,
                     )
-                    async with session.post(url, headers=headers, json=payload) as response:
-                        if response.status != 200:
-                            error_text = await response.text()
-                            if response.status in (429, 500, 502, 503, 504) and attempt < max_retries - 1:
-                                await asyncio.sleep(2**attempt)
-                                last_error = RuntimeError(f"API请求失败 ({response.status}): {error_text[:200]}")
-                                continue
-                            raise RuntimeError(f"API请求失败 ({response.status}): {error_text[:200]}")
+                return full_response
 
-                        full_response = ""
-                        async for raw_line in response.content:
-                            line = raw_line.decode("utf-8").strip()
-                            if not line or line == "data: [DONE]":
-                                continue
-                            if not line.startswith("data: "):
-                                continue
-                            try:
-                                data = json.loads(line[6:])
-                            except json.JSONDecodeError:
-                                continue
-
-                            chunk_content = ""
-                            if is_anthropic:
-                                if data.get("type") == "content_block_delta":
-                                    chunk_content = data.get("delta", {}).get("text", "")
-                            else:
-                                choices = data.get("choices", [])
-                                if choices:
-                                    chunk_content = choices[0].get("delta", {}).get("content", "")
-
-                            if chunk_content:
-                                full_response += chunk_content
-                                if on_chunk:
-                                    on_chunk(chunk_content)
-
-                        if HISTORY_AVAILABLE:
-                            get_agent_history().record_llm_response(
-                                agent_key,
-                                full_response,
-                                tokens_used=0,
-                                elapsed_time=time.time() - start_time,
-                            )
-                        return full_response
-
-                except asyncio.TimeoutError:
-                    last_error = RuntimeError(f"API请求超时（{timeout}秒）")
-                    if attempt < max_retries - 1:
-                        await asyncio.sleep(2**attempt)
-                        continue
-                except aiohttp.ClientError as e:
-                    last_error = RuntimeError(f"网络连接错误: {e}")
-                    if attempt < max_retries - 1:
-                        await asyncio.sleep(2**attempt)
-                        continue
-
-    raise last_error or RuntimeError("API调用失败，已达最大重试次数")
+    with trace_context:
+        return await _retry_on_failure(_attempt, max_retries, timeout)
 
 
 async def call_llm_api(
@@ -208,12 +272,7 @@ async def call_llm_api(
     temperature: float = 0.7,
     agent_key: str = "unknown",
 ) -> str:
-    if api_config is None or not api_config.api_key:
-        raise RuntimeError("API未配置，请在配置中设置有效的 API Key 和 Base URL")
-
-    base_url = api_config.base_url.rstrip("/")
-    api_key = api_config.api_key
-    model = _get_model_name(api_config)
+    base_url, api_key, model = _validate_config(api_config)
 
     if HISTORY_AVAILABLE:
         get_agent_history().record_llm_request(agent_key, prompt, model, system_prompt)
@@ -231,67 +290,35 @@ async def call_llm_api(
     )
 
     client_timeout = aiohttp.ClientTimeout(total=timeout)
-    last_error = None
 
-    async with aiohttp.ClientSession(timeout=client_timeout) as session:
-        for attempt in range(max_retries):
-            try:
-                logger.info(
-                    "第%d次尝试调用API: %s... (超时: %d秒)",
-                    attempt + 1,
-                    url[:50],
-                    timeout,
-                )
-                async with session.post(url, headers=headers, json=payload) as response:
-                    logger.info("收到响应，状态码: %d", response.status)
-                    response_text = await response.text()
+    async def _attempt(attempt: int) -> str:
+        logger.info(
+            "第%d次尝试调用API: %s... (超时: %d秒)",
+            attempt + 1,
+            url[:50],
+            timeout,
+        )
+        async with aiohttp.ClientSession(timeout=client_timeout) as session:
+            async with session.post(url, headers=headers, json=payload) as response:
+                logger.info("收到响应，状态码: %d", response.status)
+                response_text = await response.text()
 
-                    if response.status != 200:
-                        if response.status in (429, 500, 502, 503, 504) and attempt < max_retries - 1:
-                            await asyncio.sleep(2**attempt)
-                            last_error = RuntimeError(f"API请求失败 ({response.status}): {response_text[:200]}")
-                            continue
-                        raise RuntimeError(f"API请求失败 ({response.status}): {response_text[:200]}")
+                if response.status != 200:
+                    error = RuntimeError("API请求失败 (%d): %s" % (response.status, response_text[:200]))
+                    if response.status in _RETRYABLE_STATUS_CODES and attempt < max_retries - 1:
+                        raise error
+                    raise error
 
-                    data = json.loads(response_text)
+                data = json.loads(response_text)
+                result, tokens_used = _extract_response_text(data, is_anthropic)
 
-                    if is_anthropic:
-                        content = data.get("content", [])
-                        if not content or not isinstance(content, list):
-                            raise RuntimeError("Anthropic API返回格式异常: 缺少 content 字段或 content 为空")
-                        text_blocks = [b.get("text", "") for b in content if b.get("type") == "text"]
-                        if not text_blocks:
-                            text_blocks = [content[0].get("text", "")] if content else [""]
-                        result = "\n".join(text_blocks)
-                    else:
-                        choices = data.get("choices", [])
-                        if not choices or not isinstance(choices, list):
-                            raise RuntimeError("OpenAI API返回格式异常: 缺少 choices 字段或 choices 为空")
-                        result = choices[0].get("message", {}).get("content", "")
+                if HISTORY_AVAILABLE:
+                    get_agent_history().record_llm_response(
+                        agent_key,
+                        result,
+                        tokens_used=tokens_used,
+                        elapsed_time=time.time() - start_time,
+                    )
+                return result
 
-                    if HISTORY_AVAILABLE:
-                        get_agent_history().record_llm_response(
-                            agent_key,
-                            result,
-                            tokens_used=data.get("usage", {}).get("total_tokens", 0),
-                            elapsed_time=time.time() - start_time,
-                        )
-                    return result
-
-            except json.JSONDecodeError as e:
-                last_error = RuntimeError(f"API响应JSON解析失败: {e}")
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(2**attempt)
-                    continue
-            except asyncio.TimeoutError:
-                last_error = RuntimeError(f"API请求超时（{timeout}秒）")
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(2**attempt)
-                    continue
-            except aiohttp.ClientError as e:
-                last_error = RuntimeError(f"网络连接错误: {e}")
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(2**attempt)
-                    continue
-
-    raise last_error or RuntimeError("API调用失败，已达最大重试次数")
+    return await _retry_on_failure(_attempt, max_retries, timeout)

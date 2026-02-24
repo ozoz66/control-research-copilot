@@ -34,6 +34,16 @@ class TestConnectionManager:
         assert "session-1" not in manager._connections
 
     @pytest.mark.asyncio
+    async def test_connect_is_idempotent_for_same_socket(self):
+        manager = ConnectionManager()
+        ws = FakeWebSocket()
+
+        await manager.connect("session-1", ws)
+        await manager.connect("session-1", ws)
+
+        assert len(manager._connections["session-1"]) == 1
+
+    @pytest.mark.asyncio
     async def test_broadcast_removes_dead_connections(self):
         manager = ConnectionManager()
         alive = FakeWebSocket()

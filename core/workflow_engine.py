@@ -22,8 +22,8 @@ from enum import Enum
 from .events import EventEmitter, Event
 from .telemetry import trace_workflow_stage
 
-# Stage ↔ Agent 映射（全局共用）
-_STAGE_AGENT_MAP: Dict[str, str] = {
+# Default stage ↔ agent mapping (can be overridden via set_stage_agent_map)
+_DEFAULT_STAGE_AGENT_MAP: Dict[str, str] = {
     "literature": "architect",
     "derivation": "theorist",
     "simulation": "engineer",
@@ -31,7 +31,6 @@ _STAGE_AGENT_MAP: Dict[str, str] = {
     "dsp_code": "dsp_coder",
     "paper": "scribe",
 }
-_AGENT_STAGE_MAP: Dict[str, str] = {v: k for k, v in _STAGE_AGENT_MAP.items()}
 
 
 class WorkflowState(Enum):
@@ -77,12 +76,20 @@ class WorkflowEngine:
         engine.run_in_thread(context, stages)
     """
 
-    def __init__(self, checkpoint_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        checkpoint_dir: Optional[Path] = None,
+        stage_agent_map: Optional[Dict[str, str]] = None,
+    ):
         self.events = EventEmitter()
         self._stages: Dict[str, Callable] = {}
         self._stage_descriptions: Dict[str, str] = {}
         self._stage_progress: Dict[str, int] = {}
         self._supervisor: Optional[Callable] = None
+
+        # Stage ↔ Agent mapping (single source of truth)
+        self._stage_agent_map: Dict[str, str] = dict(stage_agent_map or _DEFAULT_STAGE_AGENT_MAP)
+        self._agent_stage_map: Dict[str, str] = {v: k for k, v in self._stage_agent_map.items()}
 
         self._lock = threading.Lock()
         self._state = WorkflowState.IDLE
@@ -99,11 +106,13 @@ class WorkflowEngine:
 
     @property
     def state(self) -> WorkflowState:
-        return self._state
+        with self._lock:
+            return self._state
 
     @property
     def current_stage_index(self) -> int:
-        return self._current_stage_index
+        with self._lock:
+            return self._current_stage_index
 
     def register_stage(
         self,
@@ -379,11 +388,11 @@ class WorkflowEngine:
 
     def _stage_to_agent_key(self, stage_key: str, stages: List[str]) -> str:
         """将stage_key映射到agent_key"""
-        return _STAGE_AGENT_MAP.get(stage_key, stage_key)
+        return self._stage_agent_map.get(stage_key, stage_key)
 
     def _find_stage_by_agent(self, stages: List[str], agent_key: str) -> Optional[int]:
         """通过agent_key查找对应的stage索引"""
-        target_stage = _AGENT_STAGE_MAP.get(agent_key, agent_key)
+        target_stage = self._agent_stage_map.get(agent_key, agent_key)
         try:
             return stages.index(target_stage)
         except ValueError:
@@ -548,4 +557,5 @@ class WorkflowEngine:
 
     def is_running(self) -> bool:
         """检查是否正在运行"""
-        return self._state == WorkflowState.RUNNING
+        with self._lock:
+            return self._state == WorkflowState.RUNNING

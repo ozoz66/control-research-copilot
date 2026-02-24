@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "mcp__sequential-thinking__sequentialthinking"
+      "mcp__sequential-thinking__sequentialthinking",
+      "Bash(python -m pytest tests/ --tb=short --no-header -q)",
+      "Bash(.venv/Scripts/python.exe -m pytest:*)",
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(cat:*)"
     ]
   }
 }

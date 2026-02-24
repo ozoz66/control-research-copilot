@@ -122,9 +122,13 @@ class ResearchOrchestrator:
         # 将 output_manager 注入到需要的 Agent
         self._inject_output_manager()
 
+        # Build stage->agent mapping from stage configs (single source of truth)
+        stage_agent_map = {s.key: s.agent_key for s in self._stages}
+
         # 创建工作流引擎
         self._engine = WorkflowEngine(
-            checkpoint_dir=self._current_project_dir / "checkpoints" if self._current_project_dir else None
+            checkpoint_dir=self._current_project_dir / "checkpoints" if self._current_project_dir else None,
+            stage_agent_map=stage_agent_map,
         )
 
         # 注册阶段处理器

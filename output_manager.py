@@ -193,7 +193,7 @@ class OutputManager:
                 self._cleanup_latex_aux()
                 return pdf_path
         except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            logger.error(f"PDF编译失败: {e}")
+            logger.error("PDF编译失败: %s", e)
         return None
 
     def _cleanup_latex_aux(self):
@@ -218,7 +218,7 @@ class OutputManager:
             webbrowser.open("https://www.overleaf.com/project")
             return True
         except Exception as e:
-            logger.error(f"打开Overleaf失败: {e}")
+            logger.error("打开Overleaf失败: %s", e)
             return False
 
     def get_tex_path(self) -> Optional[Path]:
